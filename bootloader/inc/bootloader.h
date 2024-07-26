@@ -29,7 +29,7 @@
 #define SIG_SIZE 256
 #define CHUNK_SIZE (BLOCK_SIZE + SIG_SIZE)
 
-#define MAX_CHUNK_NO 32 // 30KB firmware + padding
+#define MAX_CHUNK_NO 64 // (30KB firmware + padding) * 2 cuz memes
 
 // Return messages
 #define VERIFY_SUCCESS 0

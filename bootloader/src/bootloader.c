@@ -37,6 +37,7 @@ void uart_write_unsigned_short(uint8_t, uint16_t);
 void finalize_firmware(void);
 void check_firmware_version(void);
 void set_firmware_metadata(void);
+void verify_firmware(void);
 
 // General constants
 #define FW_VERSION_LEN 2
@@ -125,6 +126,7 @@ int main(void) {
       uart_write_str(UART0, "U");
       load_firmware();
       decrypt_firmware();
+      verify_firmware();
       check_firmware_version();
       set_firmware_metadata();
       finalize_firmware();
@@ -187,7 +189,7 @@ void load_firmware(void) {
       error();
     }
   }
-  encrypted_fw_size -= *(uint8_t*)(FW_TEMP_BASE+encrypted_fw_size-1) + 1;
+  encrypted_fw_size -= *(uint8_t *)(FW_TEMP_BASE + encrypted_fw_size - 1) + 1;
 }
 
 void error(void) {
@@ -304,6 +306,8 @@ void boot_firmware(void) {
 
   if (!fw_present) {
     uart_write_str(UART0, "No firmware loaded.\n");
+    while (UARTBusy(UART0_BASE)) {
+    };
     SysCtlReset();  // Reset device
     return;
   }
@@ -446,6 +450,38 @@ void set_firmware_metadata(void) {
 
   // Write the metadata to permanent location in flash
   if (program_flash((void *)FW_VERSION_ADDR, data, FLASH_PAGESIZE) != 0) {
+    SysCtlReset();
+  }
+}
+
+void verify_firmware(void) {
+  // check if every byte is doubled
+  uint8_t fw_padding_size = *(uint8_t *)(FW_TEMP_BASE + encrypted_fw_size - AES_IV_SIZE - 1);
+  if (fw_padding_size % 2 != 0) {
+    SysCtlReset();
+  }
+
+  uint32_t firmware_size = encrypted_fw_size - AES_IV_SIZE - fw_padding_size;
+  for (int i = 0; i < firmware_size / 2; i++) {
+    uint8_t *addr = (uint8_t *)(FW_TEMP_BASE + (i * 2));
+    if (*(addr) != *(addr + 1)) {
+      SysCtlReset();
+    }
+  }
+
+  // Move firmware to be not doubled
+  uint32_t page_addr = FW_TEMP_BASE;
+  int i = 0;
+  for (; i < firmware_size / 2; i++) {
+    if (i != 0 && (i % FLASH_PAGESIZE) == 0) {
+      if (program_flash((void *)page_addr, data, FLASH_PAGESIZE) != 0) {
+        SysCtlReset();
+      }
+      page_addr += FLASH_PAGESIZE;
+    }
+    data[i % FLASH_PAGESIZE] = *(uint8_t *)(FW_TEMP_BASE + (i * 2));
+  }
+  if (program_flash((void *)page_addr, data, i % 1024) != 0) {
     SysCtlReset();
   }
 }

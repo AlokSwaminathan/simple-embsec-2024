@@ -23,6 +23,7 @@ def protect_firmware(infile, outfile, version, message,secrets_path,debug):
         firmware = fp.read()
         
     firmware_blob = p16(version,endian='little') + p16(len(firmware),endian='little') + firmware + message.encode('ascii') + b'\x00'
+    firmware_blob = bytes([b for b in firmware_blob for _ in range(2)])
 
     # open secrets file
     with open(secrets_path,'rb') as s:
