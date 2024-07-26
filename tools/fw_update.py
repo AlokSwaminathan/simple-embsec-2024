@@ -73,9 +73,7 @@ def update(ser, infile, debug):
         firmware = fp.read()
     
     padding = (256-(len(firmware) % 256))
-    print(padding)
-    firmware += p8(padding) * padding
-    print(len(firmware))
+    firmware += p8(padding-1) * padding
     ready_bootloader()
 
     # Send firmware in frames

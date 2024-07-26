@@ -187,7 +187,7 @@ void load_firmware(void) {
       error();
     }
   }
-  encrypted_fw_size -= *(uint8_t*)(FW_TEMP_BASE+encrypted_fw_size-1);
+  encrypted_fw_size -= *(uint8_t*)(FW_TEMP_BASE+encrypted_fw_size-1) + 1;
 }
 
 void error(void) {
