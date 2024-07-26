@@ -29,47 +29,36 @@ import serial
 
 from util import *
 
-ser = serial.Serial("/dev/ttyACM0", 115200)
+if platform.system() == 'Darwin':
+    ser = serial.Serial("/dev/tty.usbmodem0E23AD551", 115200)
+else:
+    ser = serial.Serial("/dev/ttyACM0", 115200)
 
 RESP_OK = b"\x00"
 FRAME_SIZE = 256
 
 
-def send_metadata(ser, metadata, debug=False):
-    assert(len(metadata) == 4)
-    version = u16(metadata[:2], endian='little')
-    size = u16(metadata[2:], endian='little')
-    print(f"Version: {version}\nSize: {size} bytes\n")
-
+def ready_bootloader():
     # Handshake for update
     ser.write(b"U")
 
     print("Waiting for bootloader to enter update mode...")
     while ser.read(1).decode() != "U":
-        print("got a byte")
-        pass
-
-    # Send size and version to bootloader.
-    if debug:
-        print(metadata)
-
-    ser.write(metadata)
-
-    # Wait for an OK from the bootloader.
-    resp = ser.read(1)
-    if resp != RESP_OK:
-        raise RuntimeError("ERROR: Bootloader responded with {}".format(repr(resp)))
+        print("Got a non \'U\' byte")
+    print("Bootloader is ready to update")
 
 
 def send_frame(ser, frame, debug=False):
+    ser.write(p16(len(frame),endian='little'))
+  
     ser.write(frame)  # Write the frame...
 
     if debug:
         print_hex(frame)
+    
+    ser.flush()
 
     resp = ser.read(1)  # Wait for an OK from the bootloader
-
-    time.sleep(0.1)
 
     if resp != RESP_OK:
         raise RuntimeError("ERROR: Bootloader responded with {}".format(repr(resp)))
@@ -81,26 +70,26 @@ def send_frame(ser, frame, debug=False):
 def update(ser, infile, debug):
     # Open serial port. Set baudrate to 115200. Set timeout to 2 seconds.
     with open(infile, "rb") as fp:
-        firmware_blob = fp.read()
+        firmware = fp.read()
+    
+    padding = (256-(len(firmware) % 256))
+    print(padding)
+    firmware += p8(padding) * padding
+    print(len(firmware))
+    ready_bootloader()
 
-    metadata = firmware_blob[:4]
-    firmware = firmware_blob[4:]
-
-    send_metadata(ser, metadata, debug=debug)
-
-    for idx, frame_start in enumerate(range(0, len(firmware), FRAME_SIZE)):
-        data = firmware[frame_start : frame_start + FRAME_SIZE]
-
-        # Construct frame.
-        frame = p16(len(data), endian='big') + data
-
-        send_frame(ser, frame, debug=debug)
-        print(f"Wrote frame {idx} ({len(frame)} bytes)")
+    # Send firmware in frames
+    num_frames = len(firmware) // FRAME_SIZE
+    num_frames -= 1 if len(firmware) % FRAME_SIZE == 0 else 0
+    for i in range(0, len(firmware), FRAME_SIZE):
+        frame = firmware[i:i+FRAME_SIZE]
+        send_frame(ser, frame, debug = debug)
+        print(f"Sent frame {i // FRAME_SIZE} of {num_frames}")
 
     print("Done writing firmware.")
 
     # Send a zero length payload to tell the bootlader to finish writing it's page.
-    ser.write(p16(0x0000, endian='big'))
+    ser.write(p16(0x0000, endian='little'))
     resp = ser.read(1)  # Wait for an OK from the bootloader
     if resp != RESP_OK:
         raise RuntimeError("ERROR: Bootloader responded to zero length frame with {}".format(repr(resp)))
@@ -117,5 +106,4 @@ if __name__ == "__main__":
     parser.add_argument("--debug", help="Enable debugging messages.", action="store_true")
     args = parser.parse_args()
 
-    update(ser=ser, infile=args.firmware, debug=args.debug)
-    ser.close()
+    update(ser=ser, infile=args.firmware, debug=args.debug).close()
